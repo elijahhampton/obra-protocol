@@ -1,0 +1,50 @@
+# Build artifacts
+/target
+/sierra
+/artifacts
+
+# Scarb
+.scarb
+Scarb.lock
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+.DS_Store
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Debug files
+*.debug
+
+# Test artifacts
+/coverage
+coverage.json
+lcov.info
+
+# Cairo specific
+*.sierra
+*.casm
+*.compiled_contract_class.json
+*_abi.json
+
+# Foundry specific
+.snfoundry_cache/
+
+# Logs
+*.log
+logs/
+
+# Local development
+.local/
+dist/
+
+# System Files
+.DS_Store
+Thumbs.db
