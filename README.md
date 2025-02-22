@@ -44,10 +44,10 @@ WorkCore is a contract that facilitates:
 ```cairo
 let work = Work {
     id: work_id,
-    employer_address: employer,
-    employer_negotiation_signature: sig1,
-    worker_address: worker,
-    worker_negotiation_signature: sig2,
+    initiator: employer,
+    initiator_sig: sig1,
+    provider: worker,
+    provider_sig: sig2,
     reward: amount,
     status: WorkStatus::Created
 };
