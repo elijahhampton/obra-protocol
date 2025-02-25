@@ -4,23 +4,20 @@ use starknet::ContractAddress;
 #[derive(Drop, Copy, Serde, starknet::Store, PartialEq)]
 pub enum WorkStatus {
     Created,
-    Funded, 
-    HashSubmitted, 
-    FullySubmitted, 
-    ApprovalPending, 
-    SubmissionDenied, 
-    Completed, 
-    Refunded, 
-    Closed 
+    Occupied,
+    ApprovalPending,
+    SubmissionDenied,
+    Completed,
+    Closed,
 }
 
 #[derive(Drop, Clone, Serde, starknet::Store)]
 pub struct Task {
-    pub id: NonZero<felt252>, 
+    pub id: NonZero<felt252>,
     pub initiator: ContractAddress,
-    pub provider: ContractAddress, 
-    pub initiator_sig: felt252, 
+    pub provider: ContractAddress,
+    pub initiator_sig: felt252,
     pub provider_sig: felt252,
-    pub reward: NonZero<u256>, 
-    pub status: WorkStatus, 
+    pub reward: NonZero<u256>,
+    pub status: Option<WorkStatus>,
 }

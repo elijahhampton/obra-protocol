@@ -1,0 +1,2 @@
+mod test_core_vectors;
+mod test_user_registration_vectors;

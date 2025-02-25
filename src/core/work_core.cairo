@@ -1,84 +1,45 @@
 #[starknet::contract]
 pub mod WorkCore {
+    use super::super::error::RegistrationError;
     use crate::types::task::{Task, WorkStatus};
     use crate::interface::i_work_core::{IWorkCore};
+    use crate::interface::i_user_registration::{IUserRegistration};
     use starknet::{ContractAddress, get_caller_address, get_contract_address};
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::storage::Map;
     use core::num::traits::Zero;
     use core::zeroable::NonZero;
-    
+    use core::result::Result;
+    use core::option::Option;
+    use crate::core::event::{
+        SolutionVerified, StatusUpdate, ProviderRegistered, TaskRegistered, WorkSubmission,
+    };
+
     #[storage]
     struct Storage {
-        // The registrar map maps a user contract address to a profile.
-        registrar: Map<ContractAddress, felt252>,
-        // The address of base ERC20 token used for Task not created in an external market.
-        payout_token_erc20: ContractAddress, 
-        // A mapping of task IDs to task.
-        tasks: Map::<felt252, Task>, 
-        // A mapping of task IDs to task verification hashes.
-        verification_hashes: Map<felt252, felt252> 
+        registrar: Map<ContractAddress, bool>,
+        profile_tasks: Map<(ContractAddress, felt252), Task>,
+        profile_tasks_ordered: Map<(ContractAddress, u32), felt252>,
+        profile_task_count: Map<ContractAddress, u32>,
+        payout_token_erc20: ContractAddress,
+        tasks: Map::<felt252, Task>,
+        verification_hashes: Map<felt252, felt252>,
     }
 
     #[event]
     #[derive(Drop, starknet::Event)]
-    enum Event {
+    pub enum Event {
         // Represents a status up for a task.
         StatusUpdate: StatusUpdate,
         // Represents a submission for a task.
         WorkSubmission: WorkSubmission,
         // Represents a creation and registration of a task.
-        RegisterWork: RegisterWork,
+        TaskRegistered: TaskRegistered,
         // Represents an assignment of a ServiceProvider to a task.
-        RegisterWorker: RegisterWorker,
-        // Represents a task that has been funded.
-        Funded: Funded,
+        ProviderRegistered: ProviderRegistered,
         // Represents a verified solution for a task.
         SolutionVerified: SolutionVerified,
     }
-
-    #[derive(Drop, starknet::Event)]
-    struct RegisterWorker {
-        #[key]
-        pub id: NonZero<felt252>,
-        pub address: ContractAddress,
-    }
-
-    #[derive(Drop, starknet::Event)]
-    struct StatusUpdate {
-        #[key]
-        pub id: NonZero<felt252>,
-        pub status: WorkStatus,
-    }
-
-    #[derive(Drop, starknet::Event)]
-    struct WorkSubmission {
-        id: NonZero<felt252>,
-        chain_hash: NonZero<felt252>,
-    }
-
-    #[derive(Drop, starknet::Event)]
-    struct RegisterWork {
-        id: NonZero<felt252>,
-        #[key]
-        initiator: ContractAddress,
-        provider: ContractAddress,
-    }
-
-    #[derive(Drop, starknet::Event)]
-    struct Funded {
-        #[key]
-        pub task_id: NonZero<felt252>,
-        pub amount_funded: NonZero<u256>,
-    }
-
-    #[derive(Drop, starknet::Event)]
-    struct SolutionVerified {
-        #[key]
-        pub task_id: NonZero<felt252>,
-        pub hash_matches: bool,
-    }
-
 
     #[constructor]
     fn constructor(ref self: ContractState, payout_token: ContractAddress) {
@@ -92,7 +53,9 @@ pub mod WorkCore {
         }
 
         fn validate_caller(ref self: ContractState, task: Task, expected_caller: ContractAddress) {
-            assert!(get_caller_address() == expected_caller, "unauthorized, caller is not expected");
+            assert!(
+                get_caller_address() == expected_caller, "unauthorized, caller is not expected",
+            );
         }
 
         fn check_token_requirements(
@@ -114,7 +77,7 @@ pub mod WorkCore {
         fn release_payment(ref self: ContractState, task_id: NonZero<felt252>) {
             let sol = self.verification_hashes.read(task_id.into());
             assert!(sol != 0, "task does not have solution");
-            
+
             let mut task = self.tasks.read(task_id.into());
             let token_dispatcher = IERC20Dispatcher {
                 contract_address: self.payout_token_erc20.read(),
@@ -124,7 +87,7 @@ pub mod WorkCore {
             let success = token_dispatcher.transfer(task.provider, reward_u256);
             assert(success, 'reward payment failed');
 
-            task.status = WorkStatus::Closed;
+            task.status = Option::Some(WorkStatus::Closed);
             self.tasks.write(task_id.into(), task);
 
             self
@@ -135,72 +98,135 @@ pub mod WorkCore {
     }
 
     #[abi(embed_v0)]
+    impl UserRegistrationImpl of IUserRegistration<ContractState> {
+        fn register(ref self: ContractState) -> Result<(), RegistrationError> {
+            let caller = get_caller_address();
+
+            if self.profile(caller) {
+                return Result::Err(RegistrationError::AlreadyRegistered);
+            }
+
+            self.registrar.write(caller, true);
+
+            Result::Ok(())
+        }
+
+        fn profile(ref self: ContractState, address: ContractAddress) -> bool {
+            let is_registered = self.registrar.read(address);
+            is_registered
+        }
+    }
+
+    #[abi(embed_v0)]
     impl WorkCoreImpl of IWorkCore<ContractState> {
         fn register_task(ref self: ContractState, mut task: Task) {
             assert!(task.initiator != task.provider, "self employment not authorized");
-     
-            task.initiator = get_caller_address();
-
-            // Convert reward to u256 for token operations
-            let reward: u256 = task.reward.into();
-
             let token_dispatcher = IERC20Dispatcher {
                 contract_address: self.payout_token_erc20.read(),
             };
 
             let contract_address = get_contract_address();
-            let can_transfer = self.check_token_requirements(token_dispatcher, task.initiator, contract_address, task.reward);
+
+            let can_transfer = self
+                .check_token_requirements(
+                    token_dispatcher, get_caller_address(), contract_address, task.reward,
+                );
             assert!(can_transfer, "insufficient balance or allowance");
-
-            task.status = WorkStatus::Funded;
-            self.tasks.write(task.id.into(), task.clone());
-
-            let success = token_dispatcher.transfer_from(task.initiator, contract_address, reward.into());
+            let success = token_dispatcher
+                .transfer_from(task.initiator, contract_address, task.reward.into());
             assert!(success, "funding transfer failed");
+
+            let caller = get_caller_address();
+            task.initiator = caller;
+            task.status = Option::Some(WorkStatus::Created);
+            self.tasks.write(task.id.into(), task.clone());
+            self.profile_tasks.write((caller, task.id.into().clone()), task.clone());
+
+            let current_count = self.profile_task_count.read(caller);
+            self.profile_tasks_ordered.write((caller, current_count), task.id.into());
+            self.profile_task_count.write(caller, current_count + 1);
+
+            if task.provider.is_non_zero() {
+                self.assign(task.id, task.provider);
+            }
 
             self
                 .emit(
-                    Event::RegisterWork(
-                        RegisterWork {
+                    Event::TaskRegistered(
+                        TaskRegistered {
                             id: task.id,
                             initiator: task.initiator,
                             provider: task.provider,
+                            amount_funded: task.reward.into(),
                         },
                     ),
                 );
-            
-            self.emit(Event::Funded(Funded { task_id: task.id, amount_funded: task.reward }));
 
-            self
+            if task.provider.is_non_zero() {
+                self
                 .emit(
-                    Event::StatusUpdate(StatusUpdate { id: task.id, status: WorkStatus::Funded }),
+                    Event::ProviderRegistered(
+                        ProviderRegistered { id: task.id.into(), address: task.provider },
+                    ),
                 );
+            }
+        }
+
+        fn get_tasks(ref self: ContractState, address: ContractAddress) -> Array<Task> {
+            let count = self.profile_task_count.read(address);
+            let mut tasks = ArrayTrait::new();
+            let mut i: u32 = 0;
+
+            loop {
+                if i >= count {
+                    break;
+                }
+
+                let task_id = self.profile_tasks_ordered.read((address, i));
+                let task = self.profile_tasks.read((address, task_id));
+                tasks.append(task);
+                i += 1;
+            };
+            tasks
         }
 
         fn assign(ref self: ContractState, task_id: NonZero<felt252>, provider: ContractAddress) {
-             assert!(!provider.is_zero(), "must assign task to a provider");
-             
+            assert!(!provider.is_zero(), "must assign task to a provider");
 
             let mut task = self.tasks.read(task_id.into());
-            assert!(task.provider.is_zero(), "task previously occupied");
+            assert!(
+                task.status.unwrap() != WorkStatus::Occupied && task.provider.is_zero(),
+                "task previously occupied",
+            );
 
+            let non_zero_task_id = task.id.clone();
             task.provider = provider;
+            task.status = Option::Some(WorkStatus::Occupied);
+            self.tasks.write(task.id.into(), task);
+            self
+                .emit(
+                    Event::ProviderRegistered(
+                        ProviderRegistered { id: non_zero_task_id, address: provider },
+                    ),
+                );
         }
 
-        fn submit(ref self: ContractState, task_id: NonZero<felt252>, verification_hash: NonZero<felt252>) {
-            let task = self.tasks.read(task_id.into());
-             assert(get_caller_address() == task.provider, 'Unauthorized caller');
+        fn submit(
+            ref self: ContractState, task_id: NonZero<felt252>, verification_hash: NonZero<felt252>,
+        ) {
+            let mut task = self.tasks.read(task_id.into());
 
+            assert(get_caller_address() == task.provider, 'Unauthorized caller');
             assert(
-                (task.status == WorkStatus::SubmissionDenied || task.status == WorkStatus::Funded),
+                (task.status.unwrap() == WorkStatus::SubmissionDenied
+                    || task.status.unwrap() == WorkStatus::Occupied),
                 'Invalid task status',
             );
 
-            self.verification_hashes.write(task_id.into(), verification_hash.into());
+            task.status = Option::Some(WorkStatus::ApprovalPending);
 
-            let mut updated_work = task;
-            updated_work.status = WorkStatus::ApprovalPending;
-            self.tasks.write(task_id.into(), updated_work);
+            self.verification_hashes.write(task_id.into(), verification_hash.into());
+            self.tasks.write(task_id.into(), task);
 
             self
                 .emit(
@@ -218,29 +244,32 @@ pub mod WorkCore {
         }
 
         fn verify_and_complete(
-            ref self: ContractState, task_id: NonZero<felt252>, solution_hash: NonZero<felt252>
+            ref self: ContractState, task_id: NonZero<felt252>, solution_hash: NonZero<felt252>,
         ) -> bool {
-       
+            let task_id_felt: felt252 = task_id.into();
             let mut task = self.tasks.read(task_id.into());
-            assert(task.status == WorkStatus::ApprovalPending, 'Invalid task status');
 
-            let stored_verification_hash = self.verification_hashes.read(task_id.into());
+            assert(task.status == Option::Some(WorkStatus::ApprovalPending), 'Invalid task status');
+
+            let stored_verification_hash = self.verification_hashes.read(task_id_felt);
             let hash_matches = stored_verification_hash == solution_hash.into();
 
-            // Prevent timing attacks by always executing both paths
+            // Update state based on verification. We maintain both paths of execution to
+            // prevent timing attacks
             if hash_matches {
-                task.status = WorkStatus::Completed;
+                task.status = Option::Some(WorkStatus::Completed);
                 self.emit(Event::SolutionVerified(SolutionVerified { task_id, hash_matches }));
                 self
-                .emit(
-                    Event::StatusUpdate(StatusUpdate { id: task_id, status: WorkStatus::Completed }),
-                );
+                    .emit(
+                        Event::StatusUpdate(
+                            StatusUpdate { id: task_id, status: WorkStatus::Completed },
+                        ),
+                    );
                 self.release_payment(task_id);
             } else {
-                task.status = WorkStatus::SubmissionDenied;
+                task.status = Option::Some(WorkStatus::SubmissionDenied);
+                self.tasks.write(task_id_felt, task.clone());
             }
-
-            self.tasks.write(task_id.into(), task);
 
             hash_matches
         }
