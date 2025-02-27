@@ -1,3 +1,5 @@
+/// A profile agnostic to a TaskProvider or ServiceProvider that tracks 
+/// work history and related attributes.
 #[derive(Drop, Serde, Copy, starknet::Store)]
 pub struct Profile {}
 

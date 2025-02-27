@@ -17,12 +17,19 @@ pub mod WorkCore {
 
     #[storage]
     struct Storage {
+        /// Mapping of user contract addresses to registration status
         registrar: Map<ContractAddress, bool>,
+        /// Task mapped by contract address and task id
         profile_tasks: Map<(ContractAddress, felt252), Task>,
+        /// Task ordered by creation and mapped by contract address and index
         profile_tasks_ordered: Map<(ContractAddress, u32), felt252>,
+        /// Maps a contract address to the total number of task completed
         profile_task_count: Map<ContractAddress, u32>,
+        /// The default ERC20 reward token
         payout_token_erc20: ContractAddress,
+        /// A map of task by id
         tasks: Map::<felt252, Task>,
+        /// Task solution hashes mapped by task id
         verification_hashes: Map<felt252, felt252>,
     }
 
@@ -48,16 +55,22 @@ pub mod WorkCore {
 
     #[generate_trait]
     impl WorkCoreInternal of WorkCoreInternalTrait {
+        /// Returns the task with the given task_id.
         fn task(ref self: ContractState, task_id: NonZero<felt252>) -> Task {
             self.tasks.read(task_id.into())
         }
 
+        /// Validates an expected caller.
         fn validate_caller(ref self: ContractState, task: Task, expected_caller: ContractAddress) {
             assert!(
                 get_caller_address() == expected_caller, "unauthorized, caller is not expected",
             );
         }
 
+        /// Checks for a given payment if:
+        /// - The spender has the balance to spend
+        /// - The spender has allocated an allowance greater than or equal to the
+        /// amount
         fn check_token_requirements(
             ref self: ContractState,
             token: IERC20Dispatcher,
@@ -74,6 +87,7 @@ pub mod WorkCore {
             true
         }
 
+        /// Releases a payment to the provider of a Task.
         fn release_payment(ref self: ContractState, task_id: NonZero<felt252>) {
             let sol = self.verification_hashes.read(task_id.into());
             assert!(sol != 0, "task does not have solution");
@@ -99,6 +113,7 @@ pub mod WorkCore {
 
     #[abi(embed_v0)]
     impl UserRegistrationImpl of IUserRegistration<ContractState> {
+        /// Registers the function caller.
         fn register(ref self: ContractState) -> Result<(), RegistrationError> {
             let caller = get_caller_address();
 
@@ -111,6 +126,7 @@ pub mod WorkCore {
             Result::Ok(())
         }
 
+        /// Returns the registration status of a given address.
         fn profile(ref self: ContractState, address: ContractAddress) -> bool {
             let is_registered = self.registrar.read(address);
             is_registered
@@ -119,6 +135,7 @@ pub mod WorkCore {
 
     #[abi(embed_v0)]
     impl WorkCoreImpl of IWorkCore<ContractState> {
+        /// Registers a task 
         fn register_task(ref self: ContractState, mut task: Task) {
             assert!(task.initiator != task.provider, "self employment not authorized");
             let token_dispatcher = IERC20Dispatcher {
@@ -172,6 +189,7 @@ pub mod WorkCore {
             }
         }
 
+        /// Returns an array of task regardless of status given a contract address.
         fn get_tasks(ref self: ContractState, address: ContractAddress) -> Array<Task> {
             let count = self.profile_task_count.read(address);
             let mut tasks = ArrayTrait::new();
@@ -188,8 +206,9 @@ pub mod WorkCore {
                 i += 1;
             };
             tasks
-        }
+        }   
 
+        /// Assigns a provider to a task given a task_id.
         fn assign(ref self: ContractState, task_id: NonZero<felt252>, provider: ContractAddress) {
             assert!(!provider.is_zero(), "must assign task to a provider");
 
@@ -211,6 +230,7 @@ pub mod WorkCore {
                 );
         }
 
+        /// Submits a verification hash for a solution for a task_id.
         fn submit(
             ref self: ContractState, task_id: NonZero<felt252>, verification_hash: NonZero<felt252>,
         ) {
@@ -243,6 +263,7 @@ pub mod WorkCore {
                 );
         }
 
+        /// Verifies a verification hash matches a solution hash and marks a Task as complete.
         fn verify_and_complete(
             ref self: ContractState, task_id: NonZero<felt252>, solution_hash: NonZero<felt252>,
         ) -> bool {

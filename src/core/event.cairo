@@ -3,6 +3,7 @@ use starknet::ContractAddress;
 use core::zeroable::NonZero;
 use core::option::Option;
 
+/// Emits when a provider is assigned to a Task.
 #[derive(Drop, starknet::Event)]
 pub struct ProviderRegistered {
     #[key]
@@ -10,6 +11,7 @@ pub struct ProviderRegistered {
     pub address: ContractAddress,
 }
 
+/// Represents when a Task has an updated status.
 #[derive(Drop, starknet::Event)]
 pub struct StatusUpdate {
     #[key]
@@ -17,12 +19,14 @@ pub struct StatusUpdate {
     pub status: WorkStatus,
 }
 
+/// Represents when a Task has a solution submission.
 #[derive(Drop, starknet::Event)]
 pub struct WorkSubmission {
     pub id: NonZero<felt252>,
     pub chain_hash: NonZero<felt252>,
 }
 
+/// Represents when a Task is registered.
 #[derive(Drop, starknet::Event)]
 pub struct TaskRegistered {
     pub id: NonZero<felt252>,
@@ -32,6 +36,7 @@ pub struct TaskRegistered {
     pub amount_funded: NonZero<u256>,
 }
 
+/// Represents when a solution to a Task has been verified.
 #[derive(Drop, starknet::Event)]
 pub struct SolutionVerified {
     #[key]
