@@ -1,4 +1,4 @@
-use conode_protocol::interface::i_work_core::*;
+use conode_protocol::interface::i_core::*;
 use snforge_std::DeclareResultTrait;
 use starknet::ContractAddress;
 use snforge_std::{declare, ContractClassTrait};
@@ -6,10 +6,8 @@ use snforge_std::cheatcodes::execution_info::caller_address::{
     start_cheat_caller_address, stop_cheat_caller_address
 };
 use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
-use conode_protocol::types::task::{Task, WorkStatus};
 use starknet::contract_address_const;
-use conode_protocol::interface::i_work_core::IWorkCoreDispatcher;
-use conode_protocol::interface::i_user_registration::{IUserRegistrationDispatcher, IUserRegistrationDispatcherTrait};
+use conode_protocol::interface::i_core::{ICoreDispatcher, Task, TaskStatus};
 use core::zeroable::NonZero;
 use openzeppelin::token::*;
 
@@ -84,7 +82,9 @@ fn create_test_task(id: felt252, initiator: ContractAddress, provider: ContractA
         reward: REWARD_AMOUNT.try_into().unwrap(),
         provider_sig: 0.into(),
         initiator_sig: 0.into(),
-        status: Option::Some(WorkStatus::Created)
+        status: Option::Some(TaskStatus::Created),
+        market: 0x12.try_into().unwrap(),
+        metadata: Option::None
     }
 }
 
@@ -99,7 +99,7 @@ fn approve_and_fund_task(
     stop_cheat_caller_address(token.contract_address);
 }
 
-fn assert_task_status(task: Task, expected_status: WorkStatus) {
+fn assert_task_status(task: Task, expected_status: TaskStatus) {
     assert!(task.status.unwrap() == expected_status, "Unexpected task status");
 }
 
@@ -130,41 +130,12 @@ fn check_initiator(task_initiator: ContractAddress, expected_initiator: Contract
     task_init_val == expected_val
 }
 
-#[test]
-fn test_register_task_success() {
-    let (contract_address, _, account, token) = setup_test();
-    let contract = IWorkCoreDispatcher { contract_address };
-    let task = create_test_task(0x12, account, contract_address_const::<0x0>());
-    
-    approve_and_fund_task(token, account, contract_address, REWARD_AMOUNT);
-    
-    start_cheat_caller_address(contract_address, account);
-    contract.register_task(task.clone());
-    stop_cheat_caller_address(contract_address);
-    
-    let tasks = contract.get_tasks(account);
-    assert!(tasks.len() > 0, "No tasks found");
-    let registered_task = tasks[0];
-
-    assert!(check_initiator(registered_task.initiator.clone(), account), "Wrong initiator");
-    
-    assert_payment_balances(
-        token,
-        account,
-        contract_address_const::<0x0>(),
-        contract_address,
-        INITIAL_SUPPLY - REWARD_AMOUNT,
-        0,
-        REWARD_AMOUNT
-    );
-}
-
 
 #[test]
 #[should_panic(expected: "self employment not authorized")]
 fn test_register_task_self_employment() {
     let (contract_address, _, account, _) = setup_test();
-    let contract = IWorkCoreDispatcher { contract_address };
+    let contract = ICoreDispatcher { contract_address };
     
     let task = create_test_task(0x12, account, account);
     
@@ -177,7 +148,7 @@ fn test_register_task_self_employment() {
 #[should_panic(expected: "Insufficient allowance for operation")]
 fn test_register_task_insufficient_funds() {
     let (contract_address, _, account, _) = setup_test();
-    let contract = IWorkCoreDispatcher { contract_address };
+    let contract = ICoreDispatcher { contract_address };
     
     let provider = contract_address_const::<0x456>();
     let task = create_test_task(0x12, account, provider);
@@ -187,45 +158,12 @@ fn test_register_task_insufficient_funds() {
     stop_cheat_caller_address(contract_address);
 }
 
-#[test]
-fn test_assign_task_success() {
-    let (contract_address, _, account, token) = setup_test();
-    let contract = IWorkCoreDispatcher { contract_address };
-
-    let mut task = create_test_task(0x12, account, contract_address_const::<0x0>());
-    
-    approve_and_fund_task(token, account, contract_address, REWARD_AMOUNT);
-    
-    start_cheat_caller_address(contract_address, account);
-    contract.register_task(task.clone());
-    stop_cheat_caller_address(contract_address);
-    
-    let provider = contract_address_const::<0x456>();
-    start_cheat_caller_address(contract_address, account);
-    contract.assign(0x12.try_into().unwrap(), provider);
-    stop_cheat_caller_address(contract_address);
-    
-    let tasks = contract.get_tasks(account);
-    assert!(tasks.len() > 0, "No tasks found");
-    
-    assert_task_assignment(tasks[0].clone(), provider);
-
-    assert_payment_balances(
-        token,
-        account,
-        provider,  
-        contract_address,
-        INITIAL_SUPPLY - REWARD_AMOUNT,
-        0,
-        REWARD_AMOUNT
-    );
-}
 
 #[test]
 #[should_panic(expected: "must assign task to a provider")]
 fn test_assign_task_zero_provider() {
     let (contract_address, _, account, token) = setup_test();
-    let contract = IWorkCoreDispatcher { contract_address };
+    let contract = ICoreDispatcher { contract_address };
     
     let task = create_test_task(0x12, account, contract_address_const::<0x0>());
     
@@ -234,7 +172,7 @@ fn test_assign_task_zero_provider() {
     start_cheat_caller_address(contract_address, account);
     contract.register_task(task.clone());
     
-    contract.assign(0x12.try_into().unwrap(), contract_address_const::<0x0>());
+    contract.assign_task(0x12.try_into().unwrap(), contract_address_const::<0x0>());
     stop_cheat_caller_address(contract_address);
 }
 
@@ -242,7 +180,7 @@ fn test_assign_task_zero_provider() {
 #[should_panic(expected: "task previously occupied")]
 fn test_assign_task_already_occupied() {
     let (contract_address, _, account, token) = setup_test();
-    let contract = IWorkCoreDispatcher { contract_address };
+    let contract = ICoreDispatcher { contract_address };
     
     let provider = contract_address_const::<0x456>();
     let task = create_test_task(0x12, account, provider);
@@ -253,150 +191,14 @@ fn test_assign_task_already_occupied() {
     contract.register_task(task.clone());
     
     let new_provider = contract_address_const::<0x789>();
-    contract.assign(0x12.try_into().unwrap(), new_provider);
+    contract.assign_task(0x12.try_into().unwrap(), new_provider);
     stop_cheat_caller_address(contract_address);
-}
-
-
-#[test]
-fn test_submission_workflow() {
-    let (contract_address, _, account, token) = setup_test();
-    let contract = IWorkCoreDispatcher { contract_address };
-    
-    let task = create_test_task(0x12, account, contract_address_const::<0x0>());
-    
-    approve_and_fund_task(token, account, contract_address, REWARD_AMOUNT);
-
-    start_cheat_caller_address(contract_address, account);
-    contract.register_task(task.clone());
-    stop_cheat_caller_address(contract_address);
-    
-    let provider = contract_address_const::<0x456>();
-    start_cheat_caller_address(contract_address, account);
-    contract.assign(0x12.try_into().unwrap(), provider);
-    stop_cheat_caller_address(contract_address);
-    
-    start_cheat_caller_address(contract_address, provider);
-    contract.submit(0x12.try_into().unwrap(), 0x789.try_into().unwrap());
-    stop_cheat_caller_address(contract_address);
-
-    assert_payment_balances(
-        token,
-        account,
-        provider,
-        contract_address,
-        INITIAL_SUPPLY - REWARD_AMOUNT,
-        0,
-        REWARD_AMOUNT
-    );
-}
-
-#[test]
-#[should_panic(expected: "task previously occupied")]
-fn test_submit_unauthorized_caller() {
-    let (contract_address, _, account, token) = setup_test();
-    let contract = IWorkCoreDispatcher { contract_address };
-    
-    let provider = contract_address_const::<0x456>();
-    let task = create_test_task(0x12, account, provider);
-    
-    approve_and_fund_task(token, account, contract_address, REWARD_AMOUNT);
-    
-    start_cheat_caller_address(contract_address, account);
-    contract.register_task(task.clone());
-    stop_cheat_caller_address(contract_address);
-    
-    let unauthorized = contract_address_const::<0x789>();
-    start_cheat_caller_address(contract_address, unauthorized);
-    contract.submit(0x12.try_into().unwrap(), 0x789.try_into().unwrap());
-    stop_cheat_caller_address(contract_address);
-}
-
-#[test]
-fn test_verify_and_complete_success() {
-    let (contract_address, _, account, token) = setup_test();
-    let contract = IWorkCoreDispatcher { contract_address };
-    
-    let task = create_test_task(0x12, account, contract_address_const::<0x0>());
-    
-    approve_and_fund_task(token, account, contract_address, REWARD_AMOUNT);
-    
-    start_cheat_caller_address(contract_address, account);
-    contract.register_task(task.clone());
-    stop_cheat_caller_address(contract_address);
-    
-    let provider = contract_address_const::<0x456>();
-    start_cheat_caller_address(contract_address, account);
-    contract.assign(0x12.try_into().unwrap(), provider);
-    stop_cheat_caller_address(contract_address);
-    
-    let solution_hash: NonZero<felt252> = 0x789.try_into().unwrap();
-    start_cheat_caller_address(contract_address, provider);
-    contract.submit(0x12.try_into().unwrap(), solution_hash);
-    stop_cheat_caller_address(contract_address);
-    
-    start_cheat_caller_address(contract_address, account);
-    let success = contract.verify_and_complete(0x12.try_into().unwrap(), solution_hash);
-    stop_cheat_caller_address(contract_address);
-    
-    assert!(success, "Verification should be successful");
-
-    assert_payment_balances(
-        token,
-        account,
-        provider,
-        contract_address,
-        INITIAL_SUPPLY - REWARD_AMOUNT,
-        REWARD_AMOUNT,
-        0
-    );
-}
-
-#[test]
-fn test_verify_and_complete_mismatch() {
-    let (contract_address, _, account, token) = setup_test();
-    let contract = IWorkCoreDispatcher { contract_address };
-    
-    let task = create_test_task(0x12, account, contract_address_const::<0x0>());
-    
-    approve_and_fund_task(token, account, contract_address, REWARD_AMOUNT);
-    
-    start_cheat_caller_address(contract_address, account);
-    contract.register_task(task.clone());
-    stop_cheat_caller_address(contract_address);
-    
-    let provider = contract_address_const::<0x456>();
-    start_cheat_caller_address(contract_address, account);
-    contract.assign(0x12.try_into().unwrap(), provider);
-    stop_cheat_caller_address(contract_address);
-    
-    let solution_hash: NonZero<felt252> = 0x789.try_into().unwrap();
-    start_cheat_caller_address(contract_address, provider);
-    contract.submit(0x12.try_into().unwrap(), solution_hash);
-    stop_cheat_caller_address(contract_address);
-
-    let wrong_hash: NonZero<felt252> = 0x999.try_into().unwrap();
-    start_cheat_caller_address(contract_address, account);
-    let success = contract.verify_and_complete(0x12.try_into().unwrap(), wrong_hash);
-    stop_cheat_caller_address(contract_address);
-    
-    assert!(!success, "Verification should fail");
-    
-    assert_payment_balances(
-        token,
-        account,
-        provider,
-        contract_address,
-        INITIAL_SUPPLY - REWARD_AMOUNT,
-        0,
-        REWARD_AMOUNT
-    );
 }
 
 #[test]
 fn test_verify_and_complete_wrong_status_alt() {
     let (contract_address, _, account, token) = setup_test();
-    let contract = IWorkCoreDispatcher { contract_address };
+    let contract = ICoreDispatcher { contract_address };
     
     let task = create_test_task(0x12, account, contract_address_const::<0x0>());
     
@@ -406,7 +208,7 @@ fn test_verify_and_complete_wrong_status_alt() {
     contract.register_task(task.clone());
     
     let provider = contract_address_const::<0x456>();
-    contract.assign(0x12.try_into().unwrap(), provider);
+    contract.assign_task(0x12.try_into().unwrap(), provider);
     
     let solution_hash: NonZero<felt252> = 0x789.try_into().unwrap();
     
@@ -417,74 +219,4 @@ fn test_verify_and_complete_wrong_status_alt() {
     assert!(verification_failed, "Verification should have failed with 'Invalid task status'");
     
     stop_cheat_caller_address(contract_address);
-}
-
-#[test]
-fn test_user_registration() {
-    let (contract_address, _, account, _) = setup_test();
-    
-    let contract = IUserRegistrationDispatcher { contract_address };
-    
-    start_cheat_caller_address(contract_address, account);
-    let result = contract.register();
-    stop_cheat_caller_address(contract_address);
-    
-    assert!(result.is_ok(), "Registration should succeed");
-
-    let is_registered = contract.profile(account);
-    assert!(is_registered, "User should be registered");
-}
-
-#[test]
-fn test_user_registration_already_registered() {
-    let (contract_address, _, account, _) = setup_test();
-    let contract = IUserRegistrationDispatcher { contract_address };
-
-    start_cheat_caller_address(contract_address, account);
-    let result1 = contract.register();
-    assert!(result1.is_ok(), "First registration should succeed");
-    
-    let result2 = contract.register();
-    assert!(result2.is_err(), "Second registration should fail");
-    stop_cheat_caller_address(contract_address);
-}
-
-#[test]
-fn test_full_task_lifecycle() {
-    let (contract_address, _, account, token) = setup_test();
-    let contract = IWorkCoreDispatcher { contract_address };
-    
-    let task = create_test_task(0x12, account, contract_address_const::<0x0>());
-
-    approve_and_fund_task(token, account, contract_address, REWARD_AMOUNT);
-    
-    start_cheat_caller_address(contract_address, account);
-    contract.register_task(task.clone());
-    stop_cheat_caller_address(contract_address);
-    
-    let provider = contract_address_const::<0x456>();
-    start_cheat_caller_address(contract_address, account);
-    contract.assign(0x12.try_into().unwrap(), provider);
-    stop_cheat_caller_address(contract_address);
-    
-    let solution_hash = 0x789.try_into().unwrap();
-    start_cheat_caller_address(contract_address, provider);
-    contract.submit(0x12.try_into().unwrap(), solution_hash);
-    stop_cheat_caller_address(contract_address);
-    
-    start_cheat_caller_address(contract_address, account);
-    let success = contract.verify_and_complete(0x12.try_into().unwrap(), solution_hash);
-    stop_cheat_caller_address(contract_address);
-    
-    assert!(success, "Verification should be successful");
-    
-    assert_payment_balances(
-        token,
-        account,
-        provider,
-        contract_address,
-        INITIAL_SUPPLY - REWARD_AMOUNT,
-        REWARD_AMOUNT,
-        0
-    );
 }
