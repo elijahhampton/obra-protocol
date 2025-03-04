@@ -1,7 +1,7 @@
 use starknet::ContractAddress;
 use core::zeroable::NonZero;
 use core::option::Option;
-use crate::interface::i_core::{TaskStatus};
+use crate::interface::i_core::{TaskState};
 
 /// Emits when a provider is assigned to a Task.
 #[derive(Drop, starknet::Event)]
@@ -16,7 +16,7 @@ pub struct ProviderRegistered {
 pub struct StatusUpdate {
     #[key]
     pub id: NonZero<felt252>,
-    pub status: TaskStatus,
+    pub status: TaskState,
 }
 
 /// Represents when a Task has a solution submission.

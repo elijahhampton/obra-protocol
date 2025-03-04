@@ -1,15 +1,14 @@
 #[starknet::contract]
 pub mod Core {
-    use crate::interface::i_core::{ICore, Task, TaskStatus};
+    use crate::interface::i_core::{ICore, ICoreMarket, ICoreFeeManagement, Task, TaskState};
+    use crate::interface::i_market::MarketType;
     use starknet::{ContractAddress, get_caller_address, get_contract_address};
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::storage::Map;
     use core::num::traits::Zero;
     use core::zeroable::NonZero;
     use core::option::Option;
-    use crate::core::event::{
-       StatusUpdate, ProviderRegistered, TaskRegistered, WorkSubmission,
-    };
+    use crate::core::event::{StatusUpdate, ProviderRegistered, TaskRegistered, WorkSubmission};
 
     #[storage]
     struct Storage {
@@ -84,20 +83,16 @@ pub mod Core {
             let success = token_dispatcher.transfer(task.provider, reward_u256);
             assert(success, 'reward payment failed');
 
-            task.status = Option::Some(TaskStatus::Closed);
+            task.status = Option::Some(TaskState::Closed);
             self.tasks.write(task_id.into(), task);
 
-            self
-                .emit(
-                    Event::StatusUpdate(StatusUpdate { id: task_id, status: TaskStatus::Closed }),
-                );
+            self.emit(Event::StatusUpdate(StatusUpdate { id: task_id, status: TaskState::Closed }));
         }
     }
 
     #[abi(embed_v0)]
     impl WorkCoreImpl of ICore<ContractState> {
-        /// Registers a task 
-        fn register_task(ref self: ContractState, mut task: Task) {
+        fn register_task(ref self: ContractState, mut task: Task, market: ContractAddress) {
             assert!(task.initiator != task.provider, "self employment not authorized");
             let token_dispatcher = IERC20Dispatcher {
                 contract_address: self.payout_token_erc20.read(),
@@ -116,7 +111,7 @@ pub mod Core {
 
             let caller = get_caller_address();
             task.initiator = caller;
-            task.status = Option::Some(TaskStatus::Created);
+            task.status = Option::Some(TaskState::Created);
             self.tasks.write(task.id.into(), task.clone());
 
             if task.provider.is_non_zero() {
@@ -134,39 +129,42 @@ pub mod Core {
                         },
                     ),
                 );
-
         }
 
-                /// Assigns a provider to a task given a task_id.
-                fn assign_task(ref self: ContractState, task_id: NonZero<felt252>, provider: ContractAddress) {
-                    assert!(!provider.is_zero(), "must assign task to a provider");
-        
-                    let mut task = self.tasks.read(task_id.into());
-                    assert!(
-                        task.status.unwrap() != TaskStatus::Occupied && task.provider.is_zero(),
-                        "task previously occupied",
-                    );
-        
-                    let non_zero_task_id = task.id.clone();
-                    task.provider = provider;
-                    task.status = Option::Some(TaskStatus::Occupied);
-                    self.tasks.write(task.id.into(), task);
-                    self
-                        .emit(
-                            Event::ProviderRegistered(
-                                ProviderRegistered { id: non_zero_task_id, address: provider },
-                            ),
-                        );
-                }
-        
+        fn assign_task(
+            ref self: ContractState, task_id: NonZero<felt252>, provider: ContractAddress,
+        ) {
+            assert!(!provider.is_zero(), "must assign task to a provider");
 
-                /// Returns the task with the given task_id.
-                fn get_task(ref self: ContractState, task_id: NonZero<felt252>) -> Task {
-                    self.tasks.read(task_id.into())
-                }
+            let mut task = self.tasks.read(task_id.into());
+            assert!(
+                task.status.unwrap() != TaskState::Occupied && task.provider.is_zero(),
+                "task previously occupied",
+            );
 
+            let non_zero_task_id = task.id.clone();
+            task.provider = provider;
+            task.status = Option::Some(TaskState::Occupied);
+            self.tasks.write(task.id.into(), task);
+            self
+                .emit(
+                    Event::ProviderRegistered(
+                        ProviderRegistered { id: non_zero_task_id, address: provider },
+                    ),
+                );
+        }
 
-        /// Submits a verification hash for a solution for a task_id.
+        fn get_task(ref self: ContractState, task_id: NonZero<felt252>) -> Task {
+            self.tasks.read(task_id.into())
+        }
+    }
+
+    #[abi(embed_v0)]
+    impl ICoreMarketImpl of ICoreMarket<ContractState> {
+        fn register_market(
+            ref self: ContractState, market: ContractAddress, market_type: MarketType,
+        ) {}
+
         fn finalize_task(
             ref self: ContractState, task_id: NonZero<felt252>, verification_hash: NonZero<felt252>,
         ) {
@@ -174,12 +172,12 @@ pub mod Core {
 
             assert(get_caller_address() == task.provider, 'Unauthorized caller');
             assert(
-                (task.status.unwrap() == TaskStatus::SubmissionDenied
-                    || task.status.unwrap() == TaskStatus::Occupied),
+                (task.status.unwrap() == TaskState::SubmissionDenied
+                    || task.status.unwrap() == TaskState::Occupied),
                 'Invalid task status',
             );
 
-            task.status = Option::Some(TaskStatus::ApprovalPending);
+            task.status = Option::Some(TaskState::ApprovalPending);
 
             self.verification_hashes.write(task_id.into(), verification_hash.into());
             self.tasks.write(task_id.into(), task);
@@ -194,9 +192,32 @@ pub mod Core {
             self
                 .emit(
                     Event::StatusUpdate(
-                        StatusUpdate { id: task_id, status: TaskStatus::ApprovalPending },
+                        StatusUpdate { id: task_id, status: TaskState::ApprovalPending },
                     ),
                 );
         }
+    }
+
+    #[abi(embed_v0)]
+    impl ICoreFeeManagementImpl of ICoreFeeManagement<ContractState> {
+        fn set_task_registration_fee_percentage(ref self: ContractState, feePercentage: u256) {}
+
+        fn get_task_registration_fee_percentage(ref self: ContractState) -> u256 {
+            0
+        }
+
+        fn set_task_finalization_fee_percentage(
+            ref self: ContractState, fee_percentage: u256, market: ContractAddress,
+        ) {}
+
+        fn get_task_finalization_fee_percentage(
+            ref self: ContractState, market: ContractAddress,
+        ) -> u256 {
+            0
+        }
+
+        fn distribute_finalization_fee(
+            ref self: ContractState, market: ContractAddress, amount: u256,
+        ) {}
     }
 }
