@@ -11,7 +11,7 @@ use conode_protocol::interface::i_core::{ICoreDispatcher, Task, TaskState};
 use core::zeroable::NonZero;
 use openzeppelin::token::*;
 
-const INITIAL_SUPPLY: u256 = 1000000;
+const INITIAL_SUPPLY: u256 = 9000000;
 const REWARD_AMOUNT: u256 = 100;
 
 #[starknet::contract]
@@ -24,7 +24,6 @@ mod TestToken {
     #[abi(embed_v0)]
     impl ERC20Impl = ERC20Component::ERC20Impl<ContractState>;
     impl InternalImpl = ERC20Component::InternalImpl<ContractState>;
-
 
     #[storage]
     struct Storage {
@@ -47,14 +46,22 @@ mod TestToken {
         self.erc20.initializer(name, symbol);
         self.erc20.mint(recipient, initial_supply);
     }
+
+    #[abi(embed_v0)]
+    fn test_mint(ref self: ContractState, recipient: ContractAddress, amount: u256) {
+        self.erc20.mint(recipient, amount);
+    }
 }
 
-fn setup_test() -> (ContractAddress, ContractAddress, ContractAddress, IERC20Dispatcher) {
-    let account = contract_address_const::<0x123>();
+fn setup_test() -> (
+    ContractAddress, ContractAddress, ContractAddress, ContractAddress, IERC20Dispatcher,
+) {
+    let test_initiator = contract_address_const::<0x123>();
+    let test_provider = contract_address_const::<0x122>();
 
     let token_class = declare("TestToken");
     let constructor_calldata = array![
-        INITIAL_SUPPLY.low.into(), INITIAL_SUPPLY.high.into(), account.into(),
+        INITIAL_SUPPLY.low.into(), INITIAL_SUPPLY.high.into(), test_initiator.into(),
     ];
     let (token_address, _) = token_class
         .unwrap()
@@ -62,15 +69,19 @@ fn setup_test() -> (ContractAddress, ContractAddress, ContractAddress, IERC20Dis
         .deploy(@constructor_calldata)
         .unwrap();
 
-    let (contract_address, _) = declare("WorkCore")
+    let (contract_address, _) = declare("Core")
         .unwrap()
         .contract_class()
-        .deploy(@array![token_address.into()])
+        .deploy(@array![token_address.into(), 1, 1])
         .unwrap();
 
     let token = IERC20Dispatcher { contract_address: token_address };
 
-    (contract_address, token_address, account, token)
+    start_cheat_caller_address(token.contract_address, test_initiator);
+    token.transfer(test_provider, 500000);
+    stop_cheat_caller_address(token.contract_address);
+
+    (contract_address, token_address, test_initiator, test_provider, token)
 }
 
 fn create_test_task(id: felt252, initiator: ContractAddress, provider: ContractAddress) -> Task {
@@ -130,13 +141,13 @@ fn check_initiator(task_initiator: ContractAddress, expected_initiator: Contract
 #[test]
 #[should_panic(expected: "self employment not authorized")]
 fn test_register_task_self_employment() {
-    let (contract_address, _, account, _) = setup_test();
+    let (contract_address, _, test_initiator, _, _) = setup_test();
     let contract = ICoreDispatcher { contract_address };
-    let market = 0x10.try_into().unwrap();
+    let market: ContractAddress = 0x10.try_into().unwrap();
 
-    let task = create_test_task(0x12, account, account);
+    let task = create_test_task(0x12, test_initiator, test_initiator);
 
-    start_cheat_caller_address(contract_address, account);
+    start_cheat_caller_address(contract_address, test_initiator);
     contract.register_task(task, market);
     stop_cheat_caller_address(contract_address);
 }
@@ -144,31 +155,31 @@ fn test_register_task_self_employment() {
 #[test]
 #[should_panic(expected: "Insufficient allowance for operation")]
 fn test_register_task_insufficient_funds() {
-    let (contract_address, _, account, _) = setup_test();
+    let (contract_address, _, test_initiator, test_provider, _) = setup_test();
     let contract = ICoreDispatcher { contract_address };
     let market = 0x10.try_into().unwrap();
 
-    let provider = contract_address_const::<0x456>();
-    let task = create_test_task(0x12, account, provider);
+    // Use a separated test provider. test_provider from setup_test() is well funded.
+    let unfunded_provider = contract_address_const::<0x456>();
+    let task = create_test_task(0x12, test_initiator, unfunded_provider);
 
-    start_cheat_caller_address(contract_address, account);
+    start_cheat_caller_address(contract_address, test_initiator);
     contract.register_task(task, market);
     stop_cheat_caller_address(contract_address);
 }
 
-
 #[test]
 #[should_panic(expected: "must assign task to a provider")]
 fn test_assign_task_zero_provider() {
-    let (contract_address, _, account, token) = setup_test();
+    let (contract_address, _, test_initiator, test_provider, token) = setup_test();
     let contract = ICoreDispatcher { contract_address };
     let market = 0x10.try_into().unwrap();
 
-    let task = create_test_task(0x12, account, contract_address_const::<0x0>());
+    let task = create_test_task(0x12, test_initiator, contract_address_const::<0x0>());
 
-    approve_and_fund_task(token, account, contract_address, REWARD_AMOUNT);
+    approve_and_fund_task(token, test_initiator, contract_address, REWARD_AMOUNT);
 
-    start_cheat_caller_address(contract_address, account);
+    start_cheat_caller_address(contract_address, test_initiator);
     contract.register_task(task.clone(), market);
 
     contract.assign_task(0x12.try_into().unwrap(), contract_address_const::<0x0>());
@@ -178,16 +189,15 @@ fn test_assign_task_zero_provider() {
 #[test]
 #[should_panic(expected: "task previously occupied")]
 fn test_assign_task_already_occupied() {
-    let (contract_address, _, account, token) = setup_test();
+    let (contract_address, _, test_initiator, test_provider, token) = setup_test();
     let contract = ICoreDispatcher { contract_address };
     let market = 0x10.try_into().unwrap();
 
-    let provider = contract_address_const::<0x456>();
-    let task = create_test_task(0x12, account, provider);
+    let task = create_test_task(0x12, test_initiator, test_provider);
 
-    approve_and_fund_task(token, account, contract_address, REWARD_AMOUNT);
+    approve_and_fund_task(token, test_initiator, contract_address, REWARD_AMOUNT);
 
-    start_cheat_caller_address(contract_address, account);
+    start_cheat_caller_address(contract_address, test_initiator);
     contract.register_task(task.clone(), market);
 
     let new_provider = contract_address_const::<0x789>();
@@ -197,15 +207,15 @@ fn test_assign_task_already_occupied() {
 
 #[test]
 fn test_verify_and_complete_wrong_status_alt() {
-    let (contract_address, _, account, token) = setup_test();
+    let (contract_address, _, test_initiator, test_provider, token) = setup_test();
     let contract = ICoreDispatcher { contract_address };
     let market = 0x10.try_into().unwrap();
 
-    let task = create_test_task(0x12, account, contract_address_const::<0x0>());
+    let task = create_test_task(0x12, test_initiator, contract_address_const::<0x0>());
 
-    approve_and_fund_task(token, account, contract_address, REWARD_AMOUNT);
+    approve_and_fund_task(token, test_initiator, contract_address, REWARD_AMOUNT);
 
-    start_cheat_caller_address(contract_address, account);
+    start_cheat_caller_address(contract_address, test_initiator);
     contract.register_task(task.clone(), market);
 
     let provider = contract_address_const::<0x456>();
@@ -221,3 +231,5 @@ fn test_verify_and_complete_wrong_status_alt() {
 
     stop_cheat_caller_address(contract_address);
 }
+
+

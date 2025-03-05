@@ -31,6 +31,9 @@ pub struct Task {
 /// A public external API related to core protocol functionality.
 #[starknet::interface]
 pub trait ICore<TContractState> {
+    /// Registers a ContractAddress to the provider_registrar.
+    fn register(ref self: TContractState);
+
     /// Registers a task in the global registrar and maps it to the underlying market it was created
     /// under.
     fn register_task(ref self: TContractState, task: Task, market: ContractAddress);
@@ -59,25 +62,17 @@ pub trait ICoreMarket<TContractState> {
     );
 }
 
-/// A public external API related to fee management.
+/// A private internal API related to fee management.
 #[starknet::interface]
 pub trait ICoreFeeManagement<TContractState> {
     /// Set the fee percentage for task registration.
-    fn set_task_registration_fee_percentage(ref self: TContractState, feePercentage: u256);
+    fn set_task_registration_fee_percentage(ref self: TContractState, fee_percentage: u8);
 
     /// Get the fee percentage for task registration.
-    fn get_task_registration_fee_percentage(ref self: TContractState) -> u256;
-
-    /// Set the fee percentage for task finalization for markets.
-    fn set_task_finalization_fee_percentage(
-        ref self: TContractState, fee_percentage: u256, market: ContractAddress,
-    );
-
-    /// Get the fee percentage for task finalization for markets.
-    fn get_task_finalization_fee_percentage(
-        ref self: TContractState, market: ContractAddress,
-    ) -> u256;
+    fn get_task_registration_fee_percentage(ref self: TContractState) -> u8;
 
     /// Distributes finalization fee to a market.
-    fn distribute_finalization_fee(ref self: TContractState, market: ContractAddress, amount: u256);
+    fn distribute_finalization_reward(
+        ref self: TContractState, market: ContractAddress, amount: u256,
+    );
 }

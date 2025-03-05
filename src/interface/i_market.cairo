@@ -1,7 +1,7 @@
 use core::zeroable::NonZero;
 
 /// Represents different variants for the types of markets supported.
-#[derive(Serde, Drop, Destruct)]
+#[derive(starknet::Store, Serde, Drop, Destruct)]
 pub enum MarketType {
     Basic,
 }

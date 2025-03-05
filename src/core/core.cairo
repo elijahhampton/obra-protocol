@@ -13,13 +13,19 @@ pub mod Core {
     #[storage]
     struct Storage {
         /// Mapping of user contract addresses to registration status
-        registrar: Map<ContractAddress, bool>,
+        provider_registrar: Map<ContractAddress, bool>,
+        /// Mapping of market contract addresses to (market_type, registration_status)
+        market_registrar: Map<ContractAddress, (MarketType, bool)>,
         /// The default ERC20 reward token
         payout_token_erc20: ContractAddress,
         /// A map of task by id
         tasks: Map::<felt252, Task>,
         /// Task solution hashes mapped by task id
         verification_hashes: Map<felt252, felt252>,
+        /// The task registration fee percentage
+        task_registration_fee_percentage: u8,
+        // The market distribution reward percentage
+        market_distribution_reward_percentage: u8,
     }
 
     #[event]
@@ -36,8 +42,17 @@ pub mod Core {
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, payout_token: ContractAddress) {
+    fn constructor(
+        ref self: ContractState,
+        payout_token: ContractAddress,
+        initial_task_registration_fee_percentage: u8,
+        initial_market_distribution_reward_percentage: u8,
+    ) {
         self.payout_token_erc20.write(payout_token);
+        self.task_registration_fee_percentage.write(initial_task_registration_fee_percentage);
+        self
+            .market_distribution_reward_percentage
+            .write(initial_market_distribution_reward_percentage);
     }
 
     #[generate_trait]
@@ -92,6 +107,10 @@ pub mod Core {
 
     #[abi(embed_v0)]
     impl WorkCoreImpl of ICore<ContractState> {
+        fn register(ref self: ContractState) {
+            self.provider_registrar.write(get_caller_address(), true);
+        }
+
         fn register_task(ref self: ContractState, mut task: Task, market: ContractAddress) {
             assert!(task.initiator != task.provider, "self employment not authorized");
             let token_dispatcher = IERC20Dispatcher {
@@ -163,7 +182,15 @@ pub mod Core {
     impl ICoreMarketImpl of ICoreMarket<ContractState> {
         fn register_market(
             ref self: ContractState, market: ContractAddress, market_type: MarketType,
-        ) {}
+        ) {
+            let mut mut_entry = self.market_registrar.read(market);
+            let (_, is_registered) = mut_entry;
+
+            if !is_registered {
+                mut_entry = (market_type, true);
+                self.market_registrar.write(market, mut_entry);
+            }
+        }
 
         fn finalize_task(
             ref self: ContractState, task_id: NonZero<felt252>, verification_hash: NonZero<felt252>,
@@ -198,26 +225,23 @@ pub mod Core {
         }
     }
 
-    #[abi(embed_v0)]
     impl ICoreFeeManagementImpl of ICoreFeeManagement<ContractState> {
-        fn set_task_registration_fee_percentage(ref self: ContractState, feePercentage: u256) {}
-
-        fn get_task_registration_fee_percentage(ref self: ContractState) -> u256 {
-            0
+        fn set_task_registration_fee_percentage(ref self: ContractState, fee_percentage: u8) {
+            self.task_registration_fee_percentage.write(fee_percentage);
         }
 
-        fn set_task_finalization_fee_percentage(
-            ref self: ContractState, fee_percentage: u256, market: ContractAddress,
-        ) {}
-
-        fn get_task_finalization_fee_percentage(
-            ref self: ContractState, market: ContractAddress,
-        ) -> u256 {
-            0
+        fn get_task_registration_fee_percentage(ref self: ContractState) -> u8 {
+            self.task_registration_fee_percentage.read()
         }
 
-        fn distribute_finalization_fee(
+        fn distribute_finalization_reward(
             ref self: ContractState, market: ContractAddress, amount: u256,
-        ) {}
+        ) {
+            let token_dispatcher = IERC20Dispatcher {
+                contract_address: self.payout_token_erc20.read(),
+            };
+
+            token_dispatcher.transfer(market, amount);
+        }
     }
 }
