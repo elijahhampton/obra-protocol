@@ -2,8 +2,18 @@ use core::zeroable::NonZero;
 
 /// Represents different variants for the types of markets supported.
 #[derive(starknet::Store, Serde, Drop, Destruct)]
+#[allow(starknet::store_no_default_variant)]
 pub enum MarketType {
-    Basic,
+    Basic,          // Simple, one-off tasks (e.g., freelance jobs)
+    RealTime,       // Immediate, time-sensitive tasks (e.g., ride-sharing)
+    Bounty,         // Competitive tasks with winner-takes-all rewards (e.g., design contests)
+    _Subscription,   // Recurring tasks with ongoing payments (e.g., hosting services)
+    _Collaborative,  // Multi-party tasks requiring teamwork (e.g., open-source projects)
+    _Auction,        // Tasks assigned via bidding (e.g., reverse auctions for lowest bid)
+    _Verified,       // Tasks with strict quality or identity checks (e.g., certified deliveries)
+    _Escrow,         // Long-term tasks with milestone payments (e.g., construction projects)
+    _PeerToPeer,     // Direct provider-to-provider task chaining (e.g., service referrals)
+    _Gamified,       // Tasks with competitive or reward-based incentives (e.g., leaderboards)
 }
 
 /// A public external API related to market functionality.
@@ -17,9 +27,43 @@ pub trait IMarket<TContractState> {
         ref self: TContractState, task_id: NonZero<felt252>, verification_hash: NonZero<felt252>,
     );
 
-    /// Pay fee to the core.
-    fn pay_fee(ref self: TContractState, task_id: u256);
-
     /// Returns the market type.
     fn market_type(ref self: TContractState) -> MarketType;
+
+    /// Receives fee share from Core for a task; updates market balance
+    /// Maintainers: Accumulate amount in storage; avoid complex logic or panics here
+    fn pay_fee(ref self: TContractState, task_id: felt252, amount: felt252);
+
+    //////////////////////////////// POST MVP Functions ////////////////////////////////////
+
+    /// Optional hook: Validates task before creation; returns 1 to approve, 0 to reject
+    /// Maintainers: Avoid panics unless critical (e.g., security); Core may proceed if 0 or panicked
+    fn pre_task_creation(self: @TContractState, task_id: felt252, description: felt252, reward: felt252) -> felt252;
+
+    /// Optional hook: Reacts after task creation (e.g., logging, notifications)
+    /// Maintainers: Keep non-critical; panics revert Core transaction
+    fn post_task_creation(ref self: TContractState, task_id: felt252);
+
+    /// Optional hook: Validates provider before assignment; returns 1 to approve, 0 to reject
+    /// Maintainers: Avoid panics unless essential; Core may proceed if 0 or panicked
+    fn pre_task_assignment(self: @TContractState, task_id: felt252, provider: felt252) -> felt252;
+
+    /// Optional hook: Reacts after provider assignment (e.g., start timer)
+    /// Maintainers: Keep non-critical; panics revert Core transaction
+    fn post_task_assignment(ref self: TContractState, task_id: felt252, provider: felt252);
+
+    /// Indicates if Market supports disputes
+    fn supports_disputes(self: @TContractState) -> u8;
+
+    /// Indicates if a Market supports hooks
+    fn supports_hooks(self: @TContractState) -> u8;
+
+    /// Initiaites a dispute for a task_id
+    fn initiate_dispute(ref self: TContractState, task_id: felt252, reason: felt252);
+    /// Resolves a dispute for a task_id.
+    /// NOTE: This function must call finalize_task to officially `finalizw` the task and update
+    /// the global provider metrics. Task resolved from dispute will not result in a call to pay_fee from
+    /// core.
+    /// - See src/interface/i_core.cairo
+    fn resolve_dispute(ref self: TContractState, task_id: felt252, approve: felt252);
 }
