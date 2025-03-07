@@ -232,4 +232,3 @@ fn test_verify_and_complete_wrong_status_alt() {
     stop_cheat_caller_address(contract_address);
 }
 
-

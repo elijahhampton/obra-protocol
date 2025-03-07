@@ -47,6 +47,12 @@ pub trait ICore<TContractState> {
     fn get_task(ref self: TContractState, task_id: NonZero<felt252>) -> Task;
 }
 
+/// A public external API related to escrow functionality.
+#[starknet::interface]
+pub trait IExternalEscrow<TContractState> {
+    fn reward_addr(self: @TContractState) -> ContractAddress;
+}
+
 /// A public external API for related to interactions between the core contract
 /// and market contracts.
 #[starknet::interface]

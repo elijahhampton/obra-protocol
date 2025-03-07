@@ -1,6 +1,8 @@
 #[starknet::contract]
 pub mod Core {
-    use crate::interface::i_core::{ICore, ICoreMarket, ICoreFeeManagement, Task, TaskState};
+    use crate::interface::i_core::{
+        ICore, ICoreMarket, IExternalEscrow, ICoreFeeManagement, Task, TaskState,
+    };
     use crate::interface::i_market::MarketType;
     use starknet::{ContractAddress, get_caller_address, get_contract_address};
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
@@ -175,6 +177,13 @@ pub mod Core {
 
         fn get_task(ref self: ContractState, task_id: NonZero<felt252>) -> Task {
             self.tasks.read(task_id.into())
+        }
+    }
+
+    #[abi(embed_v0)]
+    impl IExternalEscrowImpl of IExternalEscrow<ContractState> {
+        fn reward_addr(self: @ContractState) -> ContractAddress {
+            self.payout_token_erc20.read()
         }
     }
 
