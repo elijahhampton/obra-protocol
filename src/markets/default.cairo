@@ -1,8 +1,9 @@
-/// A default market contract showing an example implementnation of a market without support for 
+/// A default market contract showing an example implementnation of a market without support for
 /// disputes, reputation management and workflow hooks.
-/// 
+///
 /// @dev Do not use this contract in production.
-/// @note This contract serves as a demonstration of a market for MVP purposes and will continue to develop.
+/// @note This contract serves as a demonstration of a market for MVP purposes and will continue to
+/// develop.
 #[starknet::contract]
 pub mod DefaultMarket {
     use super::super::super::interface::i_core::IExternalEscrowDispatcherTrait;
@@ -75,8 +76,9 @@ pub mod DefaultMarket {
             1
         }
 
-        fn post_task_creation(ref self: ContractState, task_id: felt252) {
-            // Unimplemented: Contract does not support hooks
+        fn post_task_creation(
+            ref self: ContractState, task_id: felt252,
+        ) { // Unimplemented: Contract does not support hooks
         }
 
         fn pre_task_assignment(
