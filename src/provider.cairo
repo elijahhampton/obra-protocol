@@ -1,3 +1,15 @@
+#[starknet::interface]
+pub trait ITaskProvider<TContractState> {
+    fn task_created(ref self: TContractState);
+    fn task_resolved(ref self: TContractState);
+}
+
+#[starknet::interface]
+pub trait IServiceProvider<TContractState> {
+    fn task_completed(ref self: TContractState);
+    fn task_accepted(ref self: TContractState);
+}
+
 // SPDX-License-Identifier: MIT
 // OpenZeppelin Contracts for Cairo v0.14.0 (account/account.cairo)
 
@@ -8,9 +20,10 @@
 #[starknet::contract(account)]
 pub mod ProviderAccount {
     use ProviderAccountComponent::InternalTrait;
-    use openzeppelin::account::interface::AccountABI;
     use conode_protocol::components::provider_account_component::ProviderAccountComponent;
     use openzeppelin::introspection::src5::SRC5Component;
+    use super::ITaskProvider;
+    use super:: IServiceProvider;
 
     component!(path: ProviderAccountComponent, storage: provider, event: ProviderEvent);
     component!(path: SRC5Component, storage: src5, event: SRC5Event);
@@ -20,12 +33,24 @@ pub mod ProviderAccount {
         ProviderAccountComponent::AccountMixinImpl<ContractState>;
     impl AccountInternalImpl = ProviderAccountComponent::InternalImpl<ContractState>;
 
+    #[derive(Drop, Serde)]
+    struct TaskProviderProfile {
+        task_created: u256
+    }
+
+    #[derive(Drop, Serde)]
+    struct ServiceProviderProfile {
+        task_completed: u256
+    }
+
     #[storage]
     struct Storage {
         #[substorage(v0)]
         provider: ProviderAccountComponent::Storage,
         #[substorage(v0)]
         src5: SRC5Component::Storage,
+        task_provider: TaskProviderProfile,
+        service_provider: ServiceProviderProfile
     }
 
     #[event]
@@ -40,5 +65,21 @@ pub mod ProviderAccount {
     #[constructor]
     fn constructor(ref self: ContractState, public_key: felt252) {
         self.provider.initializer(public_key);
+    }
+
+    #[abi(embed_v0)]
+    impl TaskProviderImpl of ITaskProvider<ContractState> {
+        fn task_created(ref self: ContractState) {
+
+        }
+
+        fn task_resolved(ref self: ContractState) {}    
+    }
+
+    #[abi(embed_v0)]
+    impl ServiceProviderImpl of IServiceProvider<ContractState> {
+        fn task_completed(ref self: ContractState) {} 
+
+        fn task_accepted(ref self: ContractState) {}
     }
 }

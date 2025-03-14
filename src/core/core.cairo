@@ -1,6 +1,7 @@
 #[starknet::contract]
 pub mod Core {
-    use crate::interface::i_core::{
+    use super::super::super::provider::ITaskProviderDispatcherTrait;
+use crate::interface::i_core::{
         ICore, ICoreMarket, IExternalEscrow, ICoreFeeManagement, Task, TaskState,
     };
     use crate::interface::i_market::MarketType;
@@ -11,6 +12,8 @@ pub mod Core {
     use core::zeroable::NonZero;
     use core::option::Option;
     use crate::core::event::{StatusUpdate, ProviderRegistered, TaskRegistered, WorkSubmission};
+    use crate::provider::{IServiceProvider, IServiceProviderDispatcher};
+    use crate::provider::{ITaskProvider, ITaskProviderDispatcher};
 
     #[storage]
     struct Storage {
@@ -115,6 +118,14 @@ pub mod Core {
 
         fn register_task(ref self: ContractState, mut task: Task, market: ContractAddress) {
             assert!(task.initiator != task.provider, "self employment not authorized");
+            
+            // Update the task providers profile stats by incrementing task_created
+            let task_provider = ITaskProviderDispatcher {
+                contract_address: get_caller_address()
+            };
+            task_provider.task_created();
+
+            
             let token_dispatcher = IERC20Dispatcher {
                 contract_address: self.payout_token_erc20.read(),
             };
