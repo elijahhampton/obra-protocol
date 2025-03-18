@@ -32,7 +32,7 @@ pub mod DefaultMarket {
     #[abi(embed_v0)]
     impl IMarketImpl of IMarket<ContractState> {
         fn submit_completion(
-            ref self: ContractState, task_id: NonZero<felt252>, verification_hash: NonZero<felt252>,
+            ref self: ContractState, task_id: u64, verification_hash: NonZero<felt252>,
         ) {
             let verification_hash_raw = verification_hash.into();
             let stored_solution = self.solution_registry.read(task_id.into());

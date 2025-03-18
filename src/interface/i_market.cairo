@@ -23,7 +23,7 @@ pub trait IMarket<TContractState> {
     /// Maintainers: Use asserts for critical invariants (e.g., caller verification),
     /// but test thoroughly to avoid unintended panics that revert the transaction
     fn submit_completion(
-        ref self: TContractState, task_id: NonZero<felt252>, verification_hash: NonZero<felt252>,
+        ref self: TContractState, task_id: u64, verification_hash: NonZero<felt252>,
     );
 
     /// Returns the market type.

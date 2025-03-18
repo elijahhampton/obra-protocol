@@ -35,12 +35,12 @@ pub mod ProviderAccount {
 
     #[derive(Drop, Serde)]
     struct TaskProviderProfile {
-        task_created: u256
+        task_created: u64
     }
 
     #[derive(Drop, Serde)]
     struct ServiceProviderProfile {
-        task_completed: u256
+        task_completed: u64
     }
 
     #[storage]

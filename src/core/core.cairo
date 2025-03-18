@@ -78,7 +78,7 @@ use crate::interface::i_core::{
             token: IERC20Dispatcher,
             spender: ContractAddress,
             to: ContractAddress,
-            amount: NonZero<u256>,
+            amount: u64,
         ) -> bool {
             let allowance = token.allowance(spender, to);
             let balance = token.balance_of(spender);
@@ -90,7 +90,7 @@ use crate::interface::i_core::{
         }
 
         /// Releases a payment to the provider of a Task.
-        fn release_payment(ref self: ContractState, task_id: NonZero<felt252>) {
+        fn release_payment(ref self: ContractState, task_id: u64) {
             let sol = self.verification_hashes.read(task_id.into());
             assert!(sol != 0, "task does not have solution");
 
@@ -98,12 +98,12 @@ use crate::interface::i_core::{
             let token_dispatcher = IERC20Dispatcher {
                 contract_address: self.payout_token_erc20.read(),
             };
-            let reward_u256: u256 = task.reward.into();
+            let reward_u256: u256 = task.reward;
 
             let success = token_dispatcher.transfer(task.provider, reward_u256);
             assert(success, 'reward payment failed');
 
-            task.status = Option::Some(TaskState::Closed);
+            task.state = TaskState::Closed;
             self.tasks.write(task_id.into(), task);
 
             self.emit(Event::StatusUpdate(StatusUpdate { id: task_id, status: TaskState::Closed }));
@@ -116,8 +116,8 @@ use crate::interface::i_core::{
             self.provider_registrar.write(get_caller_address(), true);
         }
 
-        fn register_task(ref self: ContractState, mut task: Task, market: ContractAddress) {
-            assert!(task.initiator != task.provider, "self employment not authorized");
+        fn register_task(ref self: ContractState, id: u64, initiator: ContractAddress, provider: ContractAddress, reward: u256, state: TaskState, metadata: felt252, market: ContractAddress) {
+            assert!(initiator != provider, "self employment not authorized");
             
             // Update the task providers profile stats by incrementing task_created
             let task_provider = ITaskProviderDispatcher {
@@ -132,22 +132,27 @@ use crate::interface::i_core::{
 
             let contract_address = get_contract_address();
 
-            let can_transfer = self
-                .check_token_requirements(
-                    token_dispatcher, get_caller_address(), contract_address, task.reward,
-                );
-            assert!(can_transfer, "insufficient balance or allowance");
+            let mut task = Task {
+                id,
+                initiator,
+                provider,
+                reward,
+                state,
+                metadata,
+                market
+            };
+
             let success = token_dispatcher
-                .transfer_from(task.initiator, contract_address, task.reward.into());
+                .transfer_from(task.initiator, contract_address, reward);
             assert!(success, "funding transfer failed");
 
             let caller = get_caller_address();
             task.initiator = caller;
-            task.status = Option::Some(TaskState::Created);
+            task.state = TaskState::Created;
             self.tasks.write(task.id.into(), task.clone());
 
-            if task.provider.is_non_zero() {
-                self.assign_task(task.id, task.provider);
+            if task.provider.is_zero() && provider.is_non_zero() { 
+                self.assign_task(task.id, provider); 
             }
 
             self
@@ -157,26 +162,26 @@ use crate::interface::i_core::{
                             id: task.id,
                             initiator: task.initiator,
                             provider: task.provider,
-                            amount_funded: task.reward.into(),
+                            amount_funded: task.reward,
                         },
                     ),
                 );
         }
 
         fn assign_task(
-            ref self: ContractState, task_id: NonZero<felt252>, provider: ContractAddress,
+            ref self: ContractState, task_id: u64, provider: ContractAddress,
         ) {
             assert!(!provider.is_zero(), "must assign task to a provider");
 
             let mut task = self.tasks.read(task_id.into());
             assert!(
-                task.status.unwrap() != TaskState::Occupied && task.provider.is_zero(),
+                task.state != TaskState::Occupied && task.provider.is_zero(),
                 "task previously occupied",
             );
 
             let non_zero_task_id = task.id.clone();
             task.provider = provider;
-            task.status = Option::Some(TaskState::Occupied);
+            task.state = TaskState::Occupied;
             self.tasks.write(task.id.into(), task);
             self
                 .emit(
@@ -186,7 +191,7 @@ use crate::interface::i_core::{
                 );
         }
 
-        fn get_task(ref self: ContractState, task_id: NonZero<felt252>) -> Task {
+        fn get_task(ref self: ContractState, task_id: u64) -> Task {
             self.tasks.read(task_id.into())
         }
     }
@@ -213,18 +218,18 @@ use crate::interface::i_core::{
         }
 
         fn finalize_task(
-            ref self: ContractState, task_id: NonZero<felt252>, verification_hash: NonZero<felt252>,
+            ref self: ContractState, task_id: u64, verification_hash: NonZero<felt252>,
         ) {
             let mut task = self.tasks.read(task_id.into());
 
             assert(get_caller_address() == task.provider, 'Unauthorized caller');
             assert(
-                (task.status.unwrap() == TaskState::SubmissionDenied
-                    || task.status.unwrap() == TaskState::Occupied),
+                (task.state == TaskState::SubmissionDenied
+                    || task.state == TaskState::Occupied),
                 'Invalid task status',
             );
 
-            task.status = Option::Some(TaskState::ApprovalPending);
+            task.state = TaskState::ApprovalPending;
 
             self.verification_hashes.write(task_id.into(), verification_hash.into());
             self.tasks.write(task_id.into(), task);
@@ -255,13 +260,13 @@ use crate::interface::i_core::{
         }
 
         fn distribute_finalization_reward(
-            ref self: ContractState, market: ContractAddress, amount: u256,
+            ref self: ContractState, market: ContractAddress, amount: u64,
         ) {
             let token_dispatcher = IERC20Dispatcher {
                 contract_address: self.payout_token_erc20.read(),
             };
 
-            token_dispatcher.transfer(market, amount);
+            token_dispatcher.transfer(market, amount.into());
         }
     }
 }

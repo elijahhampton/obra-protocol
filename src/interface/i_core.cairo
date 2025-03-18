@@ -17,14 +17,12 @@ pub enum TaskState {
 /// A task that has been registered on chain.
 #[derive(Drop, Clone, Serde, starknet::Store)]
 pub struct Task {
-    pub id: NonZero<felt252>,
+    pub id: u64,
     pub initiator: ContractAddress,
     pub provider: ContractAddress,
-    pub initiator_sig: felt252,
-    pub provider_sig: felt252,
-    pub reward: NonZero<u256>,
-    pub status: Option<TaskState>,
-    pub metadata: Option<felt252>,
+    pub reward: u256,
+    pub state: TaskState,
+    pub metadata: felt252,
     pub market: ContractAddress,
 }
 
@@ -36,15 +34,15 @@ pub trait ICore<TContractState> {
 
     /// Registers a task in the global registrar and maps it to the underlying market it was created
     /// under.
-    fn register_task(ref self: TContractState, task: Task, market: ContractAddress);
+    fn register_task(ref self: TContractState, id: u64, initiator: ContractAddress, provider: ContractAddress, reward: u256, state: TaskState, metadata: felt252, market: ContractAddress);
 
     /// Assigns a task to a service provider. assign_task will be called implicitly in register_task
     /// if the `Task` parameter has an assigned value for provider, otherwise, it can be called
     /// explicitly for Task that do not have a provider current assigned.
-    fn assign_task(ref self: TContractState, task_id: NonZero<felt252>, provider: ContractAddress);
+    fn assign_task(ref self: TContractState, task_id: u64, provider: ContractAddress);
 
     /// Returns a task based on a task id.
-    fn get_task(ref self: TContractState, task_id: NonZero<felt252>) -> Task;
+    fn get_task(ref self: TContractState, task_id: u64) -> Task;
 }
 
 /// A public external API related to escrow functionality.
@@ -64,7 +62,7 @@ pub trait ICoreMarket<TContractState> {
     /// Checks a stored solution hash against a verification hash to prove a task has been received.
     /// NOTE: This method can only be called by a registered market contract.
     fn finalize_task(
-        ref self: TContractState, task_id: NonZero<felt252>, verification_hash: NonZero<felt252>,
+        ref self: TContractState, task_id: u64, verification_hash: NonZero<felt252>,
     );
 }
 
@@ -79,6 +77,6 @@ pub trait ICoreFeeManagement<TContractState> {
 
     /// Distributes finalization fee to a market.
     fn distribute_finalization_reward(
-        ref self: TContractState, market: ContractAddress, amount: u256,
+        ref self: TContractState, market: ContractAddress, amount: u64,
     );
 }

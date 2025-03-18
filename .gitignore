@@ -48,3 +48,9 @@ dist/
 # System Files
 .DS_Store
 Thumbs.db
+
+# Starknet Development
+account.json
+keystore.json
+.tool-versions
+provider_account.json

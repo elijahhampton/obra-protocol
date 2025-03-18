@@ -7,7 +7,7 @@ use crate::interface::i_core::{TaskState};
 #[derive(Drop, starknet::Event)]
 pub struct ProviderRegistered {
     #[key]
-    pub id: NonZero<felt252>,
+    pub id: u64,
     pub address: ContractAddress,
 }
 
@@ -15,23 +15,23 @@ pub struct ProviderRegistered {
 #[derive(Drop, starknet::Event)]
 pub struct StatusUpdate {
     #[key]
-    pub id: NonZero<felt252>,
+    pub id: u64,
     pub status: TaskState,
 }
 
 /// Represents when a Task has a solution submission.
 #[derive(Drop, starknet::Event)]
 pub struct WorkSubmission {
-    pub id: NonZero<felt252>,
+    pub id: u64,
     pub chain_hash: NonZero<felt252>,
 }
 
 /// Represents when a Task is registered.
 #[derive(Drop, starknet::Event)]
 pub struct TaskRegistered {
-    pub id: NonZero<felt252>,
+    pub id: u64,
     #[key]
     pub initiator: ContractAddress,
     pub provider: ContractAddress,
-    pub amount_funded: NonZero<u256>,
+    pub amount_funded: u256,
 }

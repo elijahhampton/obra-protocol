@@ -7,13 +7,20 @@ edition = "2023_11"
 starknet = "^2.10.1"
 openzeppelin = { git = "https://github.com/OpenZeppelin/cairo-contracts.git" }
 
+[cairo]
+sierra-replace-ids = true
+
 [dev-dependencies]
 snforge_std = { version = "~0.38.0" }
 
 [[target.starknet-contract]]
 sierra = true
+casm = true
 src = "src/lib.cairo"
 
 [scripts]
 test = "snforge test"
 gas-report = "snforge test --gas-report"
+
+
+
