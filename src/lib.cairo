@@ -11,10 +11,3 @@ pub mod interface {
 pub mod markets {
     pub mod default;
 }
-
-pub mod components {
-    pub mod provider_account_component;
-}
-
-pub mod provider;
-pub mod dummy;

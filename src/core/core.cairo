@@ -119,13 +119,6 @@ use crate::interface::i_core::{
         fn register_task(ref self: ContractState, id: u64, initiator: ContractAddress, provider: ContractAddress, reward: u256, state: TaskState, metadata: felt252, market: ContractAddress) {
             assert!(initiator != provider, "self employment not authorized");
             
-            // Update the task providers profile stats by incrementing task_created
-            let task_provider = ITaskProviderDispatcher {
-                contract_address: get_caller_address()
-            };
-            task_provider.task_created();
-
-            
             let token_dispatcher = IERC20Dispatcher {
                 contract_address: self.payout_token_erc20.read(),
             };
