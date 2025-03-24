@@ -9,10 +9,13 @@ openzeppelin = { git = "https://github.com/OpenZeppelin/cairo-contracts.git" }
 
 [cairo]
 sierra-replace-ids = true
+allow-syscalls = false
+enable-gas = true
 
 [dev-dependencies]
 snforge_std = { version = "~0.38.0" }
 
+[lib]
 [[target.starknet-contract]]
 sierra = true
 casm = true

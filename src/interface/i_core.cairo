@@ -1,6 +1,7 @@
 use starknet::ContractAddress;
 use core::zeroable::NonZero;
-use crate::interface::i_market::{MarketType};
+use crate::interface::i_market::{Market, MarketType};
+use starknet::storage::Vec;
 
 /// Represents the state of a task from the moment it is registered.
 #[allow(starknet::store_no_default_variant)]
@@ -55,6 +56,9 @@ pub trait IExternalEscrow<TContractState> {
 /// and market contracts.
 #[starknet::interface]
 pub trait ICoreMarket<TContractState> {
+    /// Returns a list of all markets registered
+    fn get_all_markets(self: @TContractState) -> Array<Market>;
+
     /// Registers a market in the global registrar.
     /// Note: This method can only be called by an external contract.
     fn register_market(ref self: TContractState, market: ContractAddress, market_type: MarketType);
@@ -77,6 +81,6 @@ pub trait ICoreFeeManagement<TContractState> {
 
     /// Distributes finalization fee to a market.
     fn distribute_finalization_reward(
-        ref self: TContractState, market: ContractAddress, amount: u64,
+        ref self: TContractState, market: ContractAddress, amount: u256,
     );
 }

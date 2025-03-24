@@ -1,7 +1,16 @@
 use core::zeroable::NonZero;
+use starknet::ContractAddress;
+
+/// Represents a market
+#[derive(starknet::Store, Serde, Drop)]
+pub struct Market {
+    pub id: u64,
+    pub m_type: MarketType,
+    pub addr: ContractAddress
+}
 
 /// Represents different variants for the types of markets supported.
-#[derive(starknet::Store, Serde, Drop, Destruct)]
+#[derive(starknet::Store, Serde, Clone, Drop, Destruct)]
 #[allow(starknet::store_no_default_variant)]
 pub enum MarketType {
     Basic, // Simple, one-off tasks (e.g., freelance jobs)
@@ -19,6 +28,9 @@ pub enum MarketType {
 /// A public external API related to market functionality.
 #[starknet::interface]
 pub trait IMarket<TContractState> {
+    /// Signals a new task has been created in the market.
+    fn new_task(ref self: TContractState);
+
     /// Submits task completion and MUST call core.finalize_task(task_id, success)
     /// Maintainers: Use asserts for critical invariants (e.g., caller verification),
     /// but test thoroughly to avoid unintended panics that revert the transaction

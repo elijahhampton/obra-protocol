@@ -31,6 +31,8 @@ pub mod DefaultMarket {
 
     #[abi(embed_v0)]
     impl IMarketImpl of IMarket<ContractState> {
+        fn new_task(ref self: ContractState) {}
+
         fn submit_completion(
             ref self: ContractState, task_id: u64, verification_hash: NonZero<felt252>,
         ) {

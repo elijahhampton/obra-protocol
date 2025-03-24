@@ -1,26 +1,30 @@
 #[starknet::contract]
 pub mod Core {
-    use super::super::super::provider::ITaskProviderDispatcherTrait;
+use starknet::storage::StoragePathEntry;
+use starknet::storage::VecTrait;
 use crate::interface::i_core::{
         ICore, ICoreMarket, IExternalEscrow, ICoreFeeManagement, Task, TaskState,
     };
-    use crate::interface::i_market::MarketType;
+    use crate::interface::i_market::{Market, MarketType, IMarketDispatcher, IMarketDispatcherTrait};
     use starknet::{ContractAddress, get_caller_address, get_contract_address};
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::storage::Map;
     use core::num::traits::Zero;
     use core::zeroable::NonZero;
     use core::option::Option;
+    use starknet::storage::Vec;
+    use starknet::storage::MutableVecTrait;
     use crate::core::event::{StatusUpdate, ProviderRegistered, TaskRegistered, WorkSubmission};
-    use crate::provider::{IServiceProvider, IServiceProviderDispatcher};
-    use crate::provider::{ITaskProvider, ITaskProviderDispatcher};
-
+use core::array::Array;
+use core::array::ArrayTrait;
     #[storage]
     struct Storage {
         /// Mapping of user contract addresses to registration status
         provider_registrar: Map<ContractAddress, bool>,
         /// Mapping of market contract addresses to (market_type, registration_status)
-        market_registrar: Map<ContractAddress, (MarketType, bool)>,
+        market_registrar: Map<ContractAddress, bool>,
+        /// A list of registered markets
+        market_list: Vec<Market>,
         /// The default ERC20 reward token
         payout_token_erc20: ContractAddress,
         /// A map of task by id
@@ -107,6 +111,14 @@ use crate::interface::i_core::{
             self.tasks.write(task_id.into(), task);
 
             self.emit(Event::StatusUpdate(StatusUpdate { id: task_id, status: TaskState::Closed }));
+        }
+    }
+
+    #[generate_trait]
+    impl MarketInternalsImpl of IMarketInternals {
+        fn market_fee_percent(ref self: ContractState, market: ContractAddress) -> u8 {
+            assert!(market.is_non_zero());
+            self.market_distribution_reward_percentage.read()
         }
     }
 
@@ -198,15 +210,47 @@ use crate::interface::i_core::{
 
     #[abi(embed_v0)]
     impl ICoreMarketImpl of ICoreMarket<ContractState> {
+        fn get_all_markets(self: @ContractState) -> Array<Market> {
+            let mut result = ArrayTrait::new();
+            let len = self.market_list.len();
+            
+            let mut i: u64 = 0;
+            while i < len {
+                if let Option::Some(storage_ptr) = self.market_list.get(i) {
+                    let market_from_storage = storage_ptr.read();
+                    
+                    let market = Market {
+                        id: market_from_storage.id,
+                        m_type: market_from_storage.m_type,
+                        addr: market_from_storage.addr
+                    };
+                    
+                    result.append(market);
+                }
+                i += 1;
+            };
+            
+            result
+        }
+
         fn register_market(
             ref self: ContractState, market: ContractAddress, market_type: MarketType,
         ) {
-            let mut mut_entry = self.market_registrar.read(market);
-            let (_, is_registered) = mut_entry;
-
+            // Check if the market is already registered
+            let storage_ptr = self.market_registrar.entry(market);
+            let is_registered = storage_ptr.read();
+        
             if !is_registered {
-                mut_entry = (market_type, true);
-                self.market_registrar.write(market, mut_entry);
+                storage_ptr.write(true);
+                
+                let market_list_len = self.market_list.len();
+                let market_struct = Market {
+                    id: market_list_len,
+                    m_type: market_type,
+                    addr: market
+                };
+        
+                 self.market_list.append().write(market_struct);
             }
         }
 
@@ -222,6 +266,8 @@ use crate::interface::i_core::{
                 'Invalid task status',
             );
 
+            let reward = task.reward;
+            let market = task.market;
             task.state = TaskState::ApprovalPending;
 
             self.verification_hashes.write(task_id.into(), verification_hash.into());
@@ -240,6 +286,9 @@ use crate::interface::i_core::{
                         StatusUpdate { id: task_id, status: TaskState::ApprovalPending },
                     ),
                 );
+            
+            let market_reward: u256 = reward * self.market_fee_percent(market).into();
+            self.distribute_finalization_reward(market, market_reward);
         }
     }
 
@@ -253,13 +302,13 @@ use crate::interface::i_core::{
         }
 
         fn distribute_finalization_reward(
-            ref self: ContractState, market: ContractAddress, amount: u64,
+            ref self: ContractState, market: ContractAddress, amount: u256,
         ) {
             let token_dispatcher = IERC20Dispatcher {
                 contract_address: self.payout_token_erc20.read(),
             };
 
-            token_dispatcher.transfer(market, amount.into());
+            token_dispatcher.transfer(market, amount);
         }
     }
 }
