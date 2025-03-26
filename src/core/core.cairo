@@ -234,6 +234,14 @@ use core::array::ArrayTrait;
 
     #[abi(embed_v0)]
     impl ICoreMarketImpl of ICoreMarket<ContractState> {
+        fn get_ith_market(self: @ContractState, i: u64) -> Option<Market> {
+            if let Option::Some(storage_ptr) = self.market_list.get(i) {
+                return Option::Some(storage_ptr.read());
+            }
+
+            return Option::None;
+        }
+
         fn get_all_markets(self: @ContractState) -> Array<Market> {
             let mut result = ArrayTrait::new();
             let len = self.market_list.len();

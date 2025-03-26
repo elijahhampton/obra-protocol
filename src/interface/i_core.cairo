@@ -55,6 +55,9 @@ pub trait IExternalEscrow<TContractState> {
 /// and market contracts.
 #[starknet::interface]
 pub trait ICoreMarket<TContractState> {
+    /// Returns a market
+    fn get_ith_market(self: @TContractState, i: u64) -> Option<Market>;
+
     /// Returns a list of all markets registered
     fn get_all_markets(self: @TContractState) -> Array<Market>;
 
