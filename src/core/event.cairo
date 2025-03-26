@@ -35,3 +35,8 @@ pub struct TaskRegistered {
     pub provider: ContractAddress,
     pub amount_funded: u256,
 }
+
+#[derive(Drop, starknet::Event)]
+pub struct NewProviderRegistrarEntry {
+    pub provider: ContractAddress
+}

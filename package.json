@@ -1,7 +1,7 @@
 {
   "dependencies": {
     "find-in-files": "^0.5.0",
-    "starknet": "^6.24.1",
+    "starknet": "^6.23.1",
     "uuid": "^11.1.0"
   }
 }

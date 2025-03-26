@@ -6,6 +6,8 @@
 const { RpcProvider, Account, Contract, json, CairoCustomEnum, CallData } = require("starknet");
 const fs = require("fs");
 const exec = require("child_process").exec;
+const { v4: uuidv4 } = require('uuid')
+const { shortString, felt } = require('starknet')
 
 const DEVNET_PORT = 5050;
 const DEVNET_SEED = 2253143690;
@@ -25,6 +27,23 @@ const coreCalldata = [
     taskFeePercentage.toString(),
     rewardPercentage.toString()
 ];
+
+
+// For short strings (up to 31 chars)
+function encodeStringToFelt(str) {
+  return shortString.encodeShortString(str);
+}
+
+// For longer strings
+function encodeLongString(str) {
+  // Split the string into chunks and encode each chunk
+  const chunks = [];
+  for (let i = 0; i < str.length; i += 31) {
+    const chunk = str.substring(i, i + 31);
+    chunks.push(shortString.encodeShortString(chunk));
+  }
+  return chunks;
+}
 
 async function deployContracts() {
     try {
@@ -91,9 +110,18 @@ async function deployContracts() {
 
         // Test with Basic (index 0)
         const myCustomEnumBasic = new CairoCustomEnum({ Basic: {} });
+        const marketTitle = new CairoCustomEnum({ DString: shortString.encodeShortString("Default Market 1") });
+        const marketMetadata = new CairoCustomEnum({ DString: shortString.encodeShortString("https://www.yahoo.com") });
+        const metadataType = new CairoCustomEnum({ HTTP: {} });
+        const marketState = new CairoCustomEnum({ Active: {} })
         const rawArgsBasic = {
-            market: marketAddress,
-            market_type: myCustomEnumBasic
+            id: 0,
+            title: marketTitle,
+            metadata: marketMetadata,
+            metadata_type: metadataType,
+            state: marketState,
+            m_type: myCustomEnumBasic,
+            addr: marketAddress,
         };
         const calldataBasic = CallData.compile(rawArgsBasic);
         console.log("Calldata (Basic):", calldataBasic);
@@ -111,22 +139,22 @@ async function deployContracts() {
             console.error("Failed with Basic:", error.message);
         }
 
-        const myCustomEnumRealTime = new CairoCustomEnum({ realTime: {} });
-        const rawArgsRealTime = {
-            market: marketAddress,
-            market_type: myCustomEnumRealTime
-        };
-        const calldataRealTime = CallData.compile(rawArgsRealTime);
+        // const myCustomEnumRealTime = new CairoCustomEnum({ realTime: {} });
+        // const rawArgsRealTime = {
+        //     market: marketAddress,
+        //     market_type: myCustomEnumRealTime
+        // };
+        // const calldataRealTime = CallData.compile(rawArgsRealTime);
 
-        const register_market_realtime_nonce = await account.getNonce();
-        const responseRealTime = await coreContract.invoke(
-            "register_market",
-            calldataRealTime,
-            { nonce: register_market_realtime_nonce, version: "0x3" } 
-        );
-        console.log("✅ Market registered (RealTime), tx hash:", responseRealTime.transaction_hash);
-        await provider.waitForTransaction(responseRealTime.transaction_hash);
-        console.log("✅ Transaction confirmed (RealTime)");
+        // const register_market_realtime_nonce = await account.getNonce();
+        // const responseRealTime = await coreContract.invoke(
+        //     "register_market",
+        //     calldataRealTime,
+        //     { nonce: register_market_realtime_nonce, version: "0x3" } 
+        // );
+        // console.log("✅ Market registered (RealTime), tx hash:", responseRealTime.transaction_hash);
+        // await provider.waitForTransaction(responseRealTime.transaction_hash);
+        // console.log("✅ Transaction confirmed (RealTime)");
 
         console.log('Returning registered markets...')
         const marketsResponse = await coreContract.call('get_all_markets', [])

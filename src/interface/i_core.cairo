@@ -1,7 +1,6 @@
 use starknet::ContractAddress;
 use core::zeroable::NonZero;
-use crate::interface::i_market::{Market, MarketType};
-use starknet::storage::Vec;
+use crate::interface::i_market::{Market};
 
 /// Represents the state of a task from the moment it is registered.
 #[allow(starknet::store_no_default_variant)]
@@ -61,7 +60,7 @@ pub trait ICoreMarket<TContractState> {
 
     /// Registers a market in the global registrar.
     /// Note: This method can only be called by an external contract.
-    fn register_market(ref self: TContractState, market: ContractAddress, market_type: MarketType);
+    fn register_market(ref self: TContractState, market: Market);
 
     /// Checks a stored solution hash against a verification hash to prove a task has been received.
     /// NOTE: This method can only be called by a registered market contract.

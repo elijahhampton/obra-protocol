@@ -5,7 +5,7 @@ use starknet::storage::VecTrait;
 use crate::interface::i_core::{
         ICore, ICoreMarket, IExternalEscrow, ICoreFeeManagement, Task, TaskState,
     };
-    use crate::interface::i_market::{Market, MarketType, IMarketDispatcher, IMarketDispatcherTrait};
+    use crate::interface::i_market::{Market};
     use starknet::{ContractAddress, get_caller_address, get_contract_address};
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::storage::Map;
@@ -14,9 +14,10 @@ use crate::interface::i_core::{
     use core::option::Option;
     use starknet::storage::Vec;
     use starknet::storage::MutableVecTrait;
-    use crate::core::event::{StatusUpdate, ProviderRegistered, TaskRegistered, WorkSubmission};
+    use crate::core::event::{StatusUpdate, NewProviderRegistrarEntry, ProviderRegistered, TaskRegistered, WorkSubmission};
 use core::array::Array;
 use core::array::ArrayTrait;
+
     #[storage]
     struct Storage {
         /// Mapping of user contract addresses to registration status
@@ -48,6 +49,8 @@ use core::array::ArrayTrait;
         TaskRegistered: TaskRegistered,
         // Represents an assignment of a ServiceProvider to a task.
         ProviderRegistered: ProviderRegistered,
+        // Represents a new entry to the provider registry
+        NewProviderRegistarEntry: NewProviderRegistrarEntry
     }
 
     #[constructor]
@@ -171,6 +174,20 @@ use core::array::ArrayTrait;
                         },
                     ),
                 );
+
+            self
+            .emit(
+                Event::ProviderRegistered(
+                    ProviderRegistered { id, address: initiator },
+                ),
+            );
+
+            let provider_storage_ptr = self.market_registrar.entry(provider);
+            let is_registered = provider_storage_ptr.read();
+
+            if !is_registered {
+                self.emit(Event::NewProviderRegistarEntry( NewProviderRegistrarEntry { provider: initiator }));
+            }
         }
 
         fn assign_task(
@@ -188,12 +205,19 @@ use core::array::ArrayTrait;
             task.provider = provider;
             task.state = TaskState::Occupied;
             self.tasks.write(task.id.into(), task);
-            self
+
+            let provider_storage_ptr = self.market_registrar.entry(provider);
+            let is_registered = provider_storage_ptr.read();
+
+            if !is_registered {
+                self
                 .emit(
                     Event::ProviderRegistered(
                         ProviderRegistered { id: non_zero_task_id, address: provider },
                     ),
                 );
+            }
+    
         }
 
         fn get_task(ref self: ContractState, task_id: u64) -> Task {
@@ -217,12 +241,16 @@ use core::array::ArrayTrait;
             let mut i: u64 = 0;
             while i < len {
                 if let Option::Some(storage_ptr) = self.market_list.get(i) {
-                    let market_from_storage = storage_ptr.read();
+                    let storage_ptr = storage_ptr.read();
                     
                     let market = Market {
-                        id: market_from_storage.id,
-                        m_type: market_from_storage.m_type,
-                        addr: market_from_storage.addr
+                        id: storage_ptr.id,
+                    title: storage_ptr.title,
+                    metadata: storage_ptr.metadata,
+                    metadata_type: storage_ptr.metadata_type,
+                    state: storage_ptr.state,
+                    m_type: storage_ptr.m_type,
+                    addr: storage_ptr.addr
                     };
                     
                     result.append(market);
@@ -234,10 +262,11 @@ use core::array::ArrayTrait;
         }
 
         fn register_market(
-            ref self: ContractState, market: ContractAddress, market_type: MarketType,
+            ref self: ContractState, market: Market 
         ) {
-            // Check if the market is already registered
-            let storage_ptr = self.market_registrar.entry(market);
+            // Check if the market is already registered and create a storage
+            // slot if not.
+            let storage_ptr = self.market_registrar.entry(market.addr);
             let is_registered = storage_ptr.read();
         
             if !is_registered {
@@ -246,8 +275,12 @@ use core::array::ArrayTrait;
                 let market_list_len = self.market_list.len();
                 let market_struct = Market {
                     id: market_list_len,
-                    m_type: market_type,
-                    addr: market
+                    title: market.title,
+                    metadata: market.metadata,
+                    metadata_type: market.metadata_type,
+                    state: market.state,
+                    m_type: market.m_type,
+                    addr: market.addr
                 };
         
                  self.market_list.append().write(market_struct);

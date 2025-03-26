@@ -1,12 +1,40 @@
 use core::zeroable::NonZero;
 use starknet::ContractAddress;
 
-/// Represents a market
+/// Represents a short string format as the market title
+#[derive(starknet::Store, Serde, Clone, Drop, Destruct)]
+#[allow(starknet::store_no_default_variant)]
+pub enum DataString {
+    DString: felt252,
+}
+
+/// Represents the metadata source
+/// Metadata is expected to follow the following format:
+/// {
+/// "description": "string",         // Detailed description of the market
+/// "categories": ["string"],        // Array of categories or tags
+/// "rules": ["string"],               // Market rules or terms
+/// "extra_params": {                // Flexible key-value pairs
+    /// "key1": "value1",
+    /// "key2": "value2"
+/// },
+/// }
 #[derive(starknet::Store, Serde, Drop)]
-pub struct Market {
-    pub id: u64,
-    pub m_type: MarketType,
-    pub addr: ContractAddress
+#[allow(starknet::store_no_default_variant)]
+pub enum MetadataSource {
+    IPFS,    // 0: Fetch via IPFS (e.g., curl https://ipfs.io/ipfs/<metadata>)
+    HTTP,    // 1: Fetch via HTTP (e.g., curl <metadata>)
+    Arweave, // 2: Fetch via Arweave (e.g., curl https://arweave.net/<metadata>)
+    Custom   // 3: Fetch via custom indexer (e.g., curl https://<data_string>/<metadata>)
+}
+
+/// Represents the market state 
+#[derive(starknet::Store, Serde, Drop)]
+#[allow(starknet::store_no_default_variant)]
+pub enum State {
+    Active,
+    Paused,
+    Closed
 }
 
 /// Represents different variants for the types of markets supported.
@@ -23,6 +51,18 @@ pub enum MarketType {
     _Escrow, // Long-term tasks with milestone payments (e.g., construction projects)
     _PeerToPeer, // Direct provider-to-provider task chaining (e.g., service referrals)
     _Gamified // Tasks with competitive or reward-based incentives (e.g., leaderboards)
+}
+
+/// Represents a market
+#[derive(starknet::Store, Serde, Drop)]
+pub struct Market {
+    pub id: u64,
+    pub title: DataString,
+    pub metadata: DataString,
+    pub metadata_type: MetadataSource,
+    pub state: State,
+    pub m_type: MarketType,
+    pub addr: ContractAddress
 }
 
 /// A public external API related to market functionality.
